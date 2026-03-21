@@ -3,7 +3,6 @@
 <head>
     <title>Rust WebSocket Chat</title>
 
-    <!-- CSS ref -->
     <link rel="stylesheet" href="styles.css">
 </head>
 
@@ -11,13 +10,19 @@
 
 <header>
     <h2>Chat server</h2>
-    <div id="roomInfo">channel: <b>general</b></div>
+    <div id="roomInfo">channel: <b id="currentRoom">general</b></div>
 </header>
 
 <!-- username -->
 <div id="usernameSection">
     <input id="usernameInput" placeholder="Enter username">
     <button onclick="setUsername()">Join Chat</button>
+</div>
+
+<!-- room join -->
+<div id="roomSection">
+    <input id="roomInput" placeholder="Enter room name">
+    <button onclick="joinRoom()">Join Room</button>
 </div>
 
 <div id="chatContainer">
@@ -32,7 +37,6 @@
 
 </div>
 
-<!-- JavaScript reference -->
 <script src="chat.js"></script>
 
 </body>

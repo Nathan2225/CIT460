@@ -2,6 +2,7 @@
 const socket = new WebSocket("ws://localhost:3000/ws");
 
 let usernameSet = false;
+let currentRoom = "general";
 
 document.getElementById("usernameInput")
 .addEventListener("keypress", function(e) {
@@ -10,37 +11,54 @@ document.getElementById("usernameInput")
     }
 });
 
-//connect to server
+document.getElementById("roomInput")
+.addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+        joinRoom();
+    }
+});
+
+document.getElementById("msg")
+.addEventListener("keypress", function(e) {
+    if (e.key === "Enter") {
+        sendMessage();
+    }
+});
+
+// connect to server
 socket.onopen = () => {
     console.log("Connected to server");
 };
 
-// receive messages from server
+// receive messages
 socket.onmessage = (event) => {
-    const messages = document.getElementById("messages");
 
+    const messages = document.getElementById("messages");
     const li = document.createElement("li");
 
     const text = event.data;
     const splitIndex = text.indexOf(":");
 
     if (splitIndex !== -1) {
+
         const username = text.substring(0, splitIndex + 1);
         const message = text.substring(splitIndex + 1);
 
         li.innerHTML =
             "<strong>" + username + "</strong>" + message;
+
     } else {
         li.textContent = text;
     }
 
     messages.appendChild(li);
-    //scrolls messages
+
     messages.scrollTop = messages.scrollHeight;
 };
 
-//ask for username for client
+// set username
 function setUsername() {
+
     const input = document.getElementById("usernameInput");
     const username = input.value.trim();
 
@@ -53,13 +71,38 @@ function setUsername() {
 
     usernameSet = true;
 
-    //hide username input and show chat
     document.getElementById("usernameSection").style.display = "none";
     document.getElementById("chatSection").style.display = "flex";
+    document.getElementById("roomSection").style.display = "flex";
 }
 
-//send message to server
+// join room
+function joinRoom() {
+
+    if (!usernameSet) return;
+
+    const input = document.getElementById("roomInput");
+    const room = input.value.trim();
+
+    if (room === "") return;
+
+    socket.send(JSON.stringify({
+        type: "JoinRoom",
+        data: room
+    }));
+
+    currentRoom = room;
+
+    document.getElementById("currentRoom").textContent = room;
+
+    document.getElementById("messages").innerHTML = "";
+
+    input.value = "";
+}
+
+// send chat message
 function sendMessage() {
+
     if (!usernameSet || socket.readyState !== WebSocket.OPEN) return;
 
     const input = document.getElementById("msg");
@@ -74,11 +117,3 @@ function sendMessage() {
 
     input.value = "";
 }
-
-//enter to send message
-document.getElementById("msg")
-.addEventListener("keypress", function(e) {
-    if (e.key === "Enter") {
-        sendMessage();
-    }
-});

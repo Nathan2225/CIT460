@@ -80,6 +80,20 @@ button:hover {
     background-color: #4752c4;
 }
 
+#roomSection {
+    display: none;
+    margin: 10px;
+}
+
+#roomSection input {
+    flex: 1;
+    padding: 6px;
+}
+
+#roomSection button {
+    margin-left: 6px;
+}
+
 
 /* 
 prompt:

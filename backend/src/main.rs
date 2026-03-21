@@ -33,6 +33,7 @@ use serde::{Deserialize, Serialize};
 enum ClientMessage {
     SetUsername(String),
     Chat(String),
+    JoinRoom(String),
 }
 
 //client identifier type
@@ -134,8 +135,8 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                     state.clients.insert(client_id, client);
                     state.rooms
-                        .get_mut("general")
-                        .unwrap()
+                        .entry("general".to_string())
+                        .or_insert_with(HashSet::new)
                         .insert(client_id);
 
                     broadcast_to_room(
@@ -159,6 +160,49 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             format!("{}: {}", name, message),
                         );
                     }
+                }
+
+
+                // * room logic *
+                ClientMessage::JoinRoom(new_room) => {
+                    let mut state = state.inner.lock().await;
+
+                    //get needed info without holding borrow too long
+                    let (old_room, username) = if let Some(client) = state.clients.get(&client_id) {
+                        (client.room.clone(), client.username.clone())
+                    } else {
+                        return;
+                    };
+
+                    //remove client from old room
+                    if let Some(room) = state.rooms.get_mut(&old_room) {
+                        room.remove(&client_id);
+                    }
+
+                    // add client to new room and create room if it doesn't exist
+                    state.rooms
+                        .entry(new_room.clone())
+                        .or_insert_with(HashSet::new)
+                        .insert(client_id);
+
+                    //update client's stored room
+                    if let Some(client) = state.clients.get_mut(&client_id) {
+                        client.room = new_room.clone();
+
+                    }
+
+                    // broadcast messages
+                    broadcast_to_room(
+                        &state,
+                        &old_room,
+                        format!("{} left {}", username, old_room),
+                    );
+
+                    broadcast_to_room(
+                        &state,
+                        &new_room,
+                        format!("{} joined {}", username, new_room),
+                    );
                 }
             }
         }
