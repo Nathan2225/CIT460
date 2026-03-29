@@ -11,13 +11,20 @@
 <div id="app">
 
     <!-- side bar -->
-    <div id="sidebar">
-        <h3>Channels</h3>
-        <ul id="roomList"></ul>
+    <!-- Server Sidebar -->
+    <div id="serverSidebar">
+        <ul id="serverList">
+            <li class="server active">M</li>
+        </ul>
+    </div>
 
-        <!-- create room -->
+    <!-- Channel Sidebar -->
+    <div id="sidebar">
+       <h3>Channels</h3>
+    <ul id="roomList"></ul>
+
         <div id="createRoomSection">
-            <input id="roomInput" placeholder="New room name">
+            <input id="roomInput" placeholder="New channel name">
             <button onclick="joinRoom()">Create</button>
         </div>
     </div>
@@ -26,7 +33,7 @@
     <div id="main">
 
         <header>
-            <h2>Chat server</h2>
+            <h2>Main Server</h2>
             <div id="roomInfo">channel: <b id="currentRoom">general</b></div>
         </header>
 

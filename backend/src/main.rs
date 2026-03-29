@@ -53,7 +53,8 @@ type ClientId = usize;
 struct Client {
     username: String,
     sender: mpsc::UnboundedSender<String>,
-    room: String,
+    server: String,   // NEW
+    channel: String,  // renamed from room
 }
 
 
@@ -67,9 +68,13 @@ struct ServerState {
     //client info
     clients: HashMap<ClientId, Client>,
     //room info
-    rooms: HashMap<String, HashSet<ClientId>>,
+    servers: HashMap<String, Server>,
     //used to assign unique ids to clients
     next_id: ClientId,
+}
+
+struct Server {
+    channels: HashMap<String, HashSet<ClientId>>,
 }
 
 //confirm running
@@ -139,17 +144,24 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     let client = Client {
                         username: name.clone(),
                         sender: tx.clone(),
-                        room: "general".to_string(),
+                        server: "main".to_string(),
+                        channel: "general".to_string(),
                     };
 
                     state.clients.insert(client_id, client);
-                    state.rooms
-                        .entry("general".to_string())
-                        .or_insert_with(HashSet::new)
-                        .insert(client_id);
 
-                    broadcast_to_room(
+                    // add to default server/channel
+                    if let Some(server) = state.servers.get_mut("main") {
+                        server
+                            .channels
+                            .entry("general".to_string())
+                            .or_insert_with(HashSet::new)
+                            .insert(client_id);
+                    }
+
+                    broadcast_to_channel(
                         &state,
+                        "main",
                         "general",
                         format!("{} joined", name),
                     );
@@ -162,11 +174,13 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         let state = state.inner.lock().await;
 
                         let client = state.clients.get(&client_id).unwrap();
-                        let room = &client.room;
+                        let server_name = &client.server;
+                        let channel = &client.channel;
 
-                        broadcast_to_room(
+                        broadcast_to_channel(
                             &state,
-                            room,
+                            server_name,
+                            channel,
                             format!("{}: {}", name, message),
                         );
                     }
@@ -174,46 +188,55 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
 
                 // * room logic *
-                ClientMessage::JoinRoom(new_room) => {
+                ClientMessage::JoinRoom(new_channel) => {
                     let mut state = state.inner.lock().await;
 
-                    //get needed info without holding borrow too long
-                    let (old_room, username) = if let Some(client) = state.clients.get(&client_id) {
-                        (client.room.clone(), client.username.clone())
-                    } else {
-                        return;
-                    };
+                    let (server_name, old_channel, username) =
+                        if let Some(client) = state.clients.get(&client_id) {
+                            (
+                                client.server.clone(),
+                                client.channel.clone(),
+                                client.username.clone(),
+                            )
+                        } else {
+                            return;
+                        };
 
-                    //remove client from old room
-                    if let Some(room) = state.rooms.get_mut(&old_room) {
-                        room.remove(&client_id);
+                    // remove from old channel
+                    if let Some(server) = state.servers.get_mut(&server_name) {
+                        if let Some(channel) = server.channels.get_mut(&old_channel) {
+                            channel.remove(&client_id);
+                        }
                     }
 
-                    // add client to new room and create room if it doesn't exist
-                    state.rooms
-                        .entry(new_room.clone())
-                        .or_insert_with(HashSet::new)
-                        .insert(client_id);
+                    // add to new channel
+                    if let Some(server) = state.servers.get_mut(&server_name) {
+                        server
+                            .channels
+                            .entry(new_channel.clone())
+                            .or_insert_with(HashSet::new)
+                            .insert(client_id);
+                    }
 
-                    //update client's stored room
+                    // update client
                     if let Some(client) = state.clients.get_mut(&client_id) {
-                        client.room = new_room.clone();
-
+                        client.channel = new_channel.clone();
                     }
 
-                    // broadcast messages
-                    broadcast_to_room(
+                    // broadcast
+                    broadcast_to_channel(
                         &state,
-                        &old_room,
-                        format!("{} left {}", username, old_room),
+                        &server_name,
+                        &old_channel,
+                        format!("{} left {}", username, old_channel),
                     );
 
-                    broadcast_to_room(
+                    broadcast_to_channel(
                         &state,
-                        &new_room,
-                        format!("{} joined {}", username, new_room),
+                        &server_name,
+                        &new_channel,
+                        format!("{} joined {}", username, new_channel),
                     );
-                    broadcast_room_list(&state);
                 }
 
 
@@ -221,11 +244,15 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                 ClientMessage::GetRooms => {
                     let state = state.inner.lock().await;
 
-                    let rooms: Vec<String> = state.rooms.keys().cloned().collect();
+                    let channels: Vec<String> = if let Some(server) = state.servers.get("main") {
+                        server.channels.keys().cloned().collect()
+                    } else {
+                        vec![]
+                    };
 
                     if let Some(client) = state.clients.get(&client_id) {
                         let _ = client.sender.send(
-                            serde_json::to_string(&ServerMessage::RoomList(rooms)).unwrap()
+                            serde_json::to_string(&ServerMessage::RoomList(channels)).unwrap()
                         );
                     }
                 }
@@ -242,15 +269,19 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
         // remove client from state
         if let Some(client) = state.clients.remove(&client_id) {
-            if let Some(room) = state.rooms.get_mut(&client.room) {
-                room.remove(&client_id);
+            if let Some(server) = state.servers.get_mut(&client.server) {
+                if let Some(channel) = server.channels.get_mut(&client.channel) {
+                    channel.remove(&client_id);
+                }
             }
 
-            broadcast_to_room(
+            broadcast_to_channel(
                 &state,
-                &client.room,
+                &client.server,
+                &client.channel,
                 format!("{} left", name),
             );
+            
             broadcast_room_list(&state);
         }
     }
@@ -262,15 +293,18 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
 
 // helper to send a message to all clients in a room
-fn broadcast_to_room(
+fn broadcast_to_channel(
     state: &ServerState,
-    room: &str,
+    server_name: &str,
+    channel: &str,
     message: String,
 ) {
-    if let Some(clients) = state.rooms.get(room) {
-        for client_id in clients {
-            if let Some(client) = state.clients.get(client_id) {
-                let _ = client.sender.send(message.clone());
+    if let Some(server) = state.servers.get(server_name) {
+        if let Some(clients) = server.channels.get(channel) {
+            for client_id in clients {
+                if let Some(client) = state.clients.get(client_id) {
+                    let _ = client.sender.send(message.clone());
+                }
             }
         }
     }
@@ -279,10 +313,14 @@ fn broadcast_to_room(
 
 // helper to send updated room list to all clients
 fn broadcast_room_list(state: &ServerState) {
-    let rooms: Vec<String> = state.rooms.keys().cloned().collect();
+    let channels: Vec<String> = if let Some(server) = state.servers.get("main") {
+        server.channels.keys().cloned().collect()
+    } else {
+        vec![]
+    };
 
     let msg = serde_json::to_string(
-        &ServerMessage::RoomList(rooms)
+        &ServerMessage::RoomList(channels)
     ).unwrap();
 
     for client in state.clients.values() {
@@ -302,10 +340,20 @@ async fn main() {
     let state = AppState {
         inner: Arc::new(Mutex::new(ServerState {
             clients: HashMap::new(),
-            rooms: {
-                let mut r = HashMap::new();
-                r.insert("general".to_string(), HashSet::new());
-                r
+            servers: {
+                let mut servers = HashMap::new();
+
+                let mut main_server = Server {
+                    channels: HashMap::new(),
+                };
+
+                main_server
+                    .channels
+                    .insert("general".to_string(), HashSet::new());
+
+                servers.insert("main".to_string(), main_server);
+
+                servers
             },
             next_id: 0,
         })),

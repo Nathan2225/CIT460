@@ -2,7 +2,11 @@
 const socket = new WebSocket("ws://localhost:3000/ws");
 
 let usernameSet = false;
-let currentRoom = "general";
+let currentChannel = "general";
+
+socket.onopen = () => {
+    console.log("Connected to server");
+};
 
 document.getElementById("usernameInput")
 .addEventListener("keypress", function(e) {
@@ -86,7 +90,7 @@ function setUsername() {
 
     document.getElementById("usernameSection").style.display = "none";
     document.getElementById("chatSection").style.display = "flex";
-    document.getElementById("roomSection").style.display = "flex";
+    //document.getElementById("roomSection").style.display = "flex";
 }
 
 // join room
@@ -95,18 +99,18 @@ function joinRoom() {
     if (!usernameSet) return;
 
     const input = document.getElementById("roomInput");
-    const room = input.value.trim();
+    const channel = input.value.trim();
 
-    if (room === "") return;
+    if (channel === "") return;
 
     socket.send(JSON.stringify({
-        type: "JoinRoom",
-        data: room
+        type: "JoinRoom", // backend still expects this name
+        data: channel
     }));
 
-    currentRoom = room;
+    currentChannel = channel;
 
-    document.getElementById("currentRoom").textContent = room;
+    document.getElementById("currentRoom").textContent = channel;
 
     document.getElementById("messages").innerHTML = "";
 
@@ -132,7 +136,7 @@ function sendMessage() {
 }
 
 // update room list in sidebar
-function updateRoomList(rooms) {
+function updateRoomList(channels) {
 
     const list = document.getElementById("roomList");
 
@@ -140,13 +144,17 @@ function updateRoomList(rooms) {
 
     list.innerHTML = "";
 
-    rooms.forEach(room => {
+    channels.forEach(channel => {
         const li = document.createElement("li");
 
-        li.textContent = "# " + room;
+        li.textContent = "# " + channel;
+
+        if (channel === currentChannel) {
+            li.style.backgroundColor = "#40444b";
+        }
 
         li.onclick = () => {
-            joinRoomFromSidebar(room);
+            joinRoomFromSidebar(channel);
         };
 
         list.appendChild(li);
@@ -154,18 +162,18 @@ function updateRoomList(rooms) {
 }
 
 // join room when clicking from sidebar
-function joinRoomFromSidebar(roomName) {
+function joinRoomFromSidebar(channelName) {
 
     if (!usernameSet) return;
 
     socket.send(JSON.stringify({
         type: "JoinRoom",
-        data: roomName
+        data: channelName
     }));
 
-    currentRoom = roomName;
+    currentChannel = channelName;
 
-    document.getElementById("currentRoom").textContent = roomName;
+    document.getElementById("currentRoom").textContent = channelName;
 
     document.getElementById("messages").innerHTML = "";
 }
