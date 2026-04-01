@@ -186,6 +186,25 @@ button:hover {
     background-color: #4752c4;
 }
 
+#serverControls {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 10px;
+    padding: 5px;
+}
+
+#serverControls input {
+    width: 60px;
+    font-size: 10px;
+    padding: 5px;
+}
+
+#serverControls button {
+    padding: 5px;
+    font-size: 10px;
+}
+
 /* 
 prompt:
 

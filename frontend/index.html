@@ -13,9 +13,15 @@
     <!-- side bar -->
     <!-- Server Sidebar -->
     <div id="serverSidebar">
-        <ul id="serverList">
-            <li class="server active">M</li>
-        </ul>
+        <ul id="serverList"></ul>
+
+        <div id="serverControls">
+            <input id="serverNameInput" placeholder="Server name">
+            <button onclick="createServer()">+</button>
+
+            <input id="serverCodeInput" placeholder="Join code">
+            <button onclick="joinServer()">→</button>
+        </div>
     </div>
 
     <!-- Channel Sidebar -->
@@ -33,7 +39,7 @@
     <div id="main">
 
         <header>
-            <h2>Main Server</h2>
+            <h2 id="currentServer">Main Server</h2>
             <div id="roomInfo">channel: <b id="currentRoom">general</b></div>
         </header>
 
