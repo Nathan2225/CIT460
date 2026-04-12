@@ -126,6 +126,10 @@ function joinRoom() {
     document.getElementById("messages").innerHTML = "";
 
     input.value = "";
+
+    setTimeout(() => {
+        socket.send(JSON.stringify({ type: "GetRooms" }));
+    }, 200);
 }
 
 // send chat message
@@ -193,6 +197,7 @@ function joinRoomFromSidebar(channelName) {
 // create server
 window.createServer = function() {
     console.log("Create server clicked");
+
     const input = document.getElementById("serverNameInput");
     const name = input.value.trim();
 
@@ -204,12 +209,17 @@ window.createServer = function() {
     }));
 
     input.value = "";
-    
+
+    // request updated server list after a short delay
+    setTimeout(() => {
+        socket.send(JSON.stringify({ type: "GetServers" }));
+    }, 200);
 }
 
 // join server by code
 window.joinServer = function() {
     console.log("Join server clicked");
+
     const input = document.getElementById("serverCodeInput");
     const code = input.value.trim();
 
@@ -221,7 +231,11 @@ window.joinServer = function() {
     }));
 
     input.value = "";
+
     
+    setTimeout(() => {
+        socket.send(JSON.stringify({ type: "GetServers" }));
+    }, 200);
 }
 
 
@@ -271,7 +285,11 @@ function switchServer(serverId) {
     }));
 
     currentServerId = serverId;
-    socket.send(JSON.stringify({ type: "GetRooms" }));
+    
+    setTimeout(() => {
+        socket.send(JSON.stringify({ type: "GetRooms" }));
+    }, 100);
+
     document.getElementById("messages").innerHTML = "";
 
     currentChannel = "general";
