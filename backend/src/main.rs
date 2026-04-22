@@ -19,6 +19,11 @@ use std::{
     sync::Arc,
 };
 
+use argon2::{
+    password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
+    Argon2,
+};
+
 use tokio::sync::{mpsc, Mutex};
 
 //allows sending and recieving messages
@@ -860,10 +865,17 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                     match result {
                         Ok(Some(user)) => {
-                            // TEMP: plain text comparison hash later
-                            if user.password_hash == password {
+                            //KEEP THIS FOR LATER
+                            //hash password and compare
+                            
+                            let parsed_hash = PasswordHash::new(&user.password_hash).unwrap();
 
-                                
+                            if Argon2::default()
+                                .verify_password(password.as_bytes(), &parsed_hash)
+                                .is_ok()
+                            {                           
+                    
+
                                 auth_user = Some(AuthUser {
                                     user_id: user.user_id,
                                     username: user.username.clone(),
@@ -982,6 +994,15 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         return;
                     }
 
+                    let salt = SaltString::generate(&mut OsRng);
+
+                    let argon2 = Argon2::default();
+
+                    let password_hash = argon2
+                        .hash_password(password.as_bytes(), &salt)
+                        .unwrap()
+                        .to_string();
+
                     // insert new user
                     let inserted = sqlx::query!(
                         r#"
@@ -991,7 +1012,8 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         "#,
                         new_username,
                         email,
-                        password
+                        password_hash
+                        //password
                     )
                     .fetch_one(&db)
                     .await;
