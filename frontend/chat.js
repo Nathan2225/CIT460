@@ -7,6 +7,15 @@ let currentServerId = null;
 
 socket.onopen = () => {
     console.log("Connected to server");
+
+    const token = localStorage.getItem("token");
+
+    if (token) {
+        socket.send(JSON.stringify({
+            type: "ResumeSession",
+            data: { token }
+        }));
+    }
 };
 
 
@@ -35,10 +44,11 @@ socket.onmessage = (event) => {
         if (data.type === "AuthSuccess") {
             isAuthenticated = true;
 
+            localStorage.setItem("token", data.data.token);
+
             document.getElementById("authSection").style.display = "none";
             document.getElementById("chatSection").style.display = "flex";
 
-            // load initial data
             socket.send(JSON.stringify({ type: "GetServers" }));
             socket.send(JSON.stringify({ type: "GetRooms" }));
 
@@ -114,6 +124,45 @@ function signup() {
         type: "Signup",
         data: { username, email, password }
     }));
+}
+
+
+function logout() {
+    socket.send(JSON.stringify({ type: "Logout" }));
+
+    // clear token
+    localStorage.removeItem("token");
+
+    // reset auth state
+    isAuthenticated = false;
+
+    // reset client state
+    currentChannel = "general";
+    currentServerId = null;
+
+    // clear ui lists
+    document.getElementById("messages").innerHTML = "";
+    document.getElementById("roomList").innerHTML = "";
+    document.getElementById("serverList").innerHTML = "";
+
+    // reset current labels
+    document.getElementById("currentRoom").textContent = "general";
+
+    // clear input fields
+    document.getElementById("loginUsername").value = "";
+    document.getElementById("loginPassword").value = "";
+    document.getElementById("signupUsername").value = "";
+    document.getElementById("signupEmail").value = "";
+    document.getElementById("signupPassword").value = "";
+
+    document.getElementById("msg").value = "";
+    document.getElementById("roomInput").value = "";
+    document.getElementById("serverNameInput").value = "";
+    document.getElementById("serverCodeInput").value = "";
+
+    // toggle UI
+    document.getElementById("authSection").style.display = "block";
+    document.getElementById("chatSection").style.display = "none";
 }
 
 

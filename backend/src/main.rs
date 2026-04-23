@@ -42,7 +42,7 @@ use serde::{Deserialize, Serialize};
 #[serde(tag = "type", content = "data")]
 enum ClientMessage {
     // existing
-    SetUsername(String),
+    //SetUsername(String),
     Chat(String),
     JoinRoom(String),
     GetRooms, 
@@ -50,10 +50,11 @@ enum ClientMessage {
     JoinServer(String),
     GetServers,
     SwitchServer(i32),
-
     // authentication
     Login { username: String, password: String },
     Signup { username: String, email: String, password: String },
+    ResumeSession { token: String },
+    Logout,
 }
 
 
@@ -64,7 +65,7 @@ enum ServerMessage {
     ServerList(Vec<(i32, String)>),
 
     // auth
-    AuthSuccess,
+    AuthSuccess { token: String },
     AuthError(String),
 }
 
@@ -187,15 +188,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
             }
 
             match msg {
-
-
-                ClientMessage::SetUsername(_) => {
-                    let msg = serde_json::to_string(
-                        &ServerMessage::AuthError("Use login/signup instead".to_string())
-                    ).unwrap();
-
-                    let _ = tx.send(msg);
-                }
 
                 
                 // * server logic *
@@ -865,9 +857,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                     match result {
                         Ok(Some(user)) => {
-                            //KEEP THIS FOR LATER
-                            //hash password and compare
-                            
+                                       
                             let parsed_hash = PasswordHash::new(&user.password_hash).unwrap();
 
                             if Argon2::default()
@@ -915,9 +905,24 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                                     .or_insert_with(HashSet::new)
                                     .insert(client_id);
 
+                                let token: String = rand::thread_rng()
+                                    .sample_iter(&Alphanumeric)
+                                    .take(32)
+                                    .map(char::from)
+                                    .collect();
+
+                                // store token in DB
+                                let _ = sqlx::query!(
+                                    "UPDATE users SET session_token = $1 WHERE user_id = $2",
+                                    token,
+                                    user.user_id
+                                )
+                                .execute(&state.db)
+                                .await;    
+
                                 // send auth success
                                 let msg = serde_json::to_string(
-                                    &ServerMessage::AuthSuccess
+                                    &ServerMessage::AuthSuccess { token: token.clone() }
                                 ).unwrap();
                                 let _ = sender.send(msg);
 
@@ -1013,7 +1018,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         new_username,
                         email,
                         password_hash
-                        //password
                     )
                     .fetch_one(&db)
                     .await;
@@ -1021,7 +1025,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     match inserted {
                         Ok(user) => {
 
-                            // TEMP: hash password later
                             auth_user = Some(AuthUser {
                                 user_id: user.user_id,
                                 username: new_username.clone(),
@@ -1059,9 +1062,24 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                                 .or_insert_with(HashSet::new)
                                 .insert(client_id);
 
+                            let token: String = rand::thread_rng()
+                                .sample_iter(&Alphanumeric)
+                                .take(32)
+                                .map(char::from)
+                                .collect();
+
+                            // store token in DB
+                            let _ = sqlx::query!(
+                                "UPDATE users SET session_token = $1 WHERE user_id = $2",
+                                token,
+                                user.user_id
+                            )
+                            .execute(&state.db)
+                            .await;
+
                             // send auth success
                             let msg = serde_json::to_string(
-                                &ServerMessage::AuthSuccess
+                                &ServerMessage::AuthSuccess { token: token.clone() }
                             ).unwrap();
                             let _ = sender.send(msg);
 
@@ -1099,6 +1117,63 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             let _ = sender.send(msg);
                         }
                     }
+                }
+
+
+                ClientMessage::ResumeSession { token } => {
+                    let db = state.db.clone();
+
+                    let result = sqlx::query!(
+                        "SELECT user_id, username FROM users WHERE session_token = $1",
+                        token
+                    )
+                    .fetch_optional(&db)
+                    .await;
+
+                    if let Ok(Some(user)) = result {
+                        auth_user = Some(AuthUser {
+                            user_id: user.user_id,
+                            username: user.username.clone(),
+                        });
+
+                        let mut state_lock = state.inner.lock().await;
+
+                        let server_row = sqlx::query!(
+                            "SELECT server_id FROM servers WHERE name_server = 'main'"
+                        )
+                        .fetch_one(&state.db)
+                        .await
+                        .unwrap();
+
+                        let client = Client {
+                            user_id: user.user_id,
+                            username: user.username.clone(),
+                            sender: tx.clone(),
+                            server_id: server_row.server_id,
+                            channel: "general".to_string(),
+                        };
+
+                        state_lock.clients.insert(client_id, client);
+
+                        let msg = serde_json::to_string(
+                            &ServerMessage::AuthSuccess { token }
+                        ).unwrap();
+
+                        let _ = tx.send(msg);
+                    }
+                }
+
+                ClientMessage::Logout => {
+                    if let Some(user) = &auth_user {
+                        let _ = sqlx::query!(
+                            "UPDATE users SET session_token = NULL WHERE user_id = $1",
+                            user.user_id
+                        )
+                        .execute(&state.db)
+                        .await;
+                    }
+
+                    auth_user = None;
                 }
 
 
