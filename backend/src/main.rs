@@ -436,6 +436,25 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
 
                 ClientMessage::SwitchServer(new_server_id) => {
+
+                    // ensure user belongs to this server
+                    if let Some(user) = &auth_user {
+                        let allowed = sqlx::query!(
+                            "SELECT 1 as exists FROM server_members WHERE user_mem = $1 AND server_mem = $2",
+                            user.user_id,
+                            new_server_id
+                        )
+                        .fetch_optional(&state.db)
+                        .await;
+
+                        if let Ok(None) | Err(_) = allowed {
+                            // reject silently or send error
+                            return;
+                        }
+                    } else {
+                        return;
+                    }
+
                     let db = state.db.clone();
                     let db_clone1 = db.clone();
                     let db_clone2 = db.clone();
@@ -568,6 +587,31 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                 // * chat logic *
                 ClientMessage::Chat(message) => {
                     if let Some(user) = &auth_user {
+
+                        let server_id = {
+                            let state_lock = state.inner.lock().await;
+
+                            match state_lock.clients.get(&client_id) {
+                                Some(c) => c.server_id,
+                                None => return,
+                            }
+                        };
+
+                        // lock is dropped here automatically
+
+                        let allowed = sqlx::query!(
+                            "SELECT 1 as exists FROM server_members WHERE user_mem = $1 AND server_mem = $2",
+                            user.user_id,
+                            server_id
+                        )
+                        .fetch_optional(&state.db)
+                        .await;
+
+                        if let Ok(None) | Err(_) = allowed {
+                            return;
+                        }
+
+
                         let name = &user.username;
                         let state_lock = state.inner.lock().await;
 
@@ -621,6 +665,38 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                 // * room logic *
                 ClientMessage::JoinRoom(new_channel) => {
+
+                    // ensure user belongs to this server
+                    if let Some(user) = &auth_user {
+
+                        let server_id = {
+                            let state_lock = state.inner.lock().await;
+
+                            match state_lock.clients.get(&client_id) {
+                                Some(c) => c.server_id,
+                                None => return,
+                            }
+                        };
+
+                        // lock is dropped here automatically
+
+                        let allowed = sqlx::query!(
+                            "SELECT 1 as exists FROM server_members WHERE user_mem = $1 AND server_mem = $2",
+                            user.user_id,
+                            server_id
+                        )
+                        .fetch_optional(&state.db)
+                        .await;
+
+                        if let Ok(None) | Err(_) = allowed {
+                            return;
+                        }
+
+
+                    } else {
+                        return;
+                    }
+
                     let db = state.db.clone();
                     let mut state = state.inner.lock().await;
 
@@ -858,7 +934,16 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     match result {
                         Ok(Some(user)) => {
                                        
-                            let parsed_hash = PasswordHash::new(&user.password_hash).unwrap();
+                            let parsed_hash = match PasswordHash::new(&user.password_hash) {
+                                Ok(h) => h,
+                                Err(_) => {
+                                    let msg = serde_json::to_string(
+                                        &ServerMessage::AuthError("Login failed".to_string())
+                                    ).unwrap();
+                                    let _ = sender.send(msg);
+                                return;
+                                }
+                            };
 
                             if Argon2::default()
                                 .verify_password(password.as_bytes(), &parsed_hash)
@@ -907,13 +992,13 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                                 let token: String = rand::thread_rng()
                                     .sample_iter(&Alphanumeric)
-                                    .take(32)
+                                    .take(64)
                                     .map(char::from)
                                     .collect();
 
                                 // store token in DB
                                 let _ = sqlx::query!(
-                                    "UPDATE users SET session_token = $1 WHERE user_id = $2",
+                                    "UPDATE users SET session_token = $1, session_expires = NOW() + INTERVAL '7 days' WHERE user_id = $2",
                                     token,
                                     user.user_id
                                 )
@@ -1064,13 +1149,13 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                             let token: String = rand::thread_rng()
                                 .sample_iter(&Alphanumeric)
-                                .take(32)
+                                .take(64)
                                 .map(char::from)
                                 .collect();
 
                             // store token in DB
                             let _ = sqlx::query!(
-                                "UPDATE users SET session_token = $1 WHERE user_id = $2",
+                                "UPDATE users SET session_token = $1, session_expires = NOW() + INTERVAL '7 days' WHERE user_id = $2",
                                 token,
                                 user.user_id
                             )
@@ -1124,13 +1209,30 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     let db = state.db.clone();
 
                     let result = sqlx::query!(
-                        "SELECT user_id, username FROM users WHERE session_token = $1",
+                        "SELECT user_id, username FROM users WHERE session_token = $1 AND session_expires > NOW()",
                         token
                     )
                     .fetch_optional(&db)
                     .await;
 
                     if let Ok(Some(user)) = result {
+
+
+                        let new_token: String = rand::thread_rng()
+                            .sample_iter(&Alphanumeric)
+                            .take(64)
+                            .map(char::from)
+                            .collect();
+
+                        let _ = sqlx::query!(
+                            "UPDATE users SET session_token = $1, session_expires = NOW() + INTERVAL '7 days' WHERE user_id = $2",
+                            new_token,
+                            user.user_id
+                        )
+                        .execute(&db)
+                        .await;
+
+                        
                         auth_user = Some(AuthUser {
                             user_id: user.user_id,
                             username: user.username.clone(),
@@ -1156,7 +1258,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         state_lock.clients.insert(client_id, client);
 
                         let msg = serde_json::to_string(
-                            &ServerMessage::AuthSuccess { token }
+                            &ServerMessage::AuthSuccess { token: new_token.clone() }
                         ).unwrap();
 
                         let _ = tx.send(msg);
@@ -1166,7 +1268,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                 ClientMessage::Logout => {
                     if let Some(user) = &auth_user {
                         let _ = sqlx::query!(
-                            "UPDATE users SET session_token = NULL WHERE user_id = $1",
+                            "UPDATE users SET session_token = NULL, session_expires = NULL WHERE user_id = $1",
                             user.user_id
                         )
                         .execute(&state.db)

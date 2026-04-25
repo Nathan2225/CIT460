@@ -90,8 +90,13 @@ socket.onmessage = (event) => {
         const username = text.substring(0, splitIndex + 1);
         const message = text.substring(splitIndex + 1);
 
-        li.innerHTML =
-            "<strong>" + username + "</strong>" + message;
+        const strong = document.createElement("strong");
+        strong.textContent = username;
+
+        const msgText = document.createTextNode(message);
+
+        li.appendChild(strong);
+        li.appendChild(msgText);
 
     } else {
         li.textContent = text;
