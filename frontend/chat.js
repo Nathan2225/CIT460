@@ -66,6 +66,9 @@ socket.onmessage = (event) => {
             document.getElementById("serverSidebar").style.display = "flex";
             document.getElementById("sidebar").style.display = "flex";
 
+            socket.send(JSON.stringify({ type: "GetMembers" }));
+            document.getElementById("memberSidebar").style.display = "flex";
+
             socket.send(JSON.stringify({ type: "GetServers" }));
             socket.send(JSON.stringify({ type: "GetRooms" }));
 
@@ -83,12 +86,18 @@ socket.onmessage = (event) => {
             return;
         }
 
+        // handle server list updates
         if (data.type === "ServerList") {
             updateServerList(data.data);
             return;
         }
 
-        
+        // handle member list updates
+        if (data.type === "MemberList") {
+            updateMemberList(data.data);
+            return;
+        }
+
 
     } catch (e) {
         // not JSON, treat as normal chat message
@@ -168,6 +177,8 @@ function logout() {
     document.getElementById("serverList").innerHTML = "";
     document.getElementById("serverSidebar").style.display = "none";
     document.getElementById("sidebar").style.display = "none";
+    document.getElementById("memberSidebar").style.display = "none";
+    document.getElementById("memberList").innerHTML = "";
 
     // reset current labels
     document.getElementById("currentRoom").textContent = "";
@@ -303,6 +314,7 @@ window.createServer = function() {
     // request updated server list after a short delay
     setTimeout(() => {
         socket.send(JSON.stringify({ type: "GetServers" }));
+        socket.send(JSON.stringify({ type: "GetMembers" }));
     }, 200);
 }
 
@@ -325,6 +337,7 @@ window.joinServer = function() {
     
     setTimeout(() => {
         socket.send(JSON.stringify({ type: "GetServers" }));
+        socket.send(JSON.stringify({ type: "GetMembers" }));
     }, 200);
 }
 
@@ -389,6 +402,7 @@ function switchServer(serverId) {
     
     setTimeout(() => {
         socket.send(JSON.stringify({ type: "GetRooms" }));
+        socket.send(JSON.stringify({ type: "GetMembers" }));
     }, 100);
 
     document.getElementById("messages").innerHTML = "";
@@ -399,6 +413,28 @@ function switchServer(serverId) {
     socket.send(JSON.stringify({
         type: "GetRooms"
     }));
+}
+
+// update member list in sidebar
+function updateMemberList(members) {
+    const list = document.getElementById("memberList");
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    members.forEach(([username, joinedAt], index) => {
+        const li = document.createElement("li");
+
+        li.textContent = username;
+
+        // gold for owner
+        if (index === 0) {
+            li.style.fontWeight = "bold";
+            li.style.color = "#f1c40f"; 
+        }
+
+        list.appendChild(li);
+    });
 }
 
 function updateHeaderServer() {

@@ -271,6 +271,40 @@ button:hover {
     color: #b5bac1;
 }
 
+#memberSidebar {
+    width: 200px;
+    background-color: #2b2d31;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+    display: none;
+}
+
+#memberSidebar h3 {
+    margin: 5px 0 10px 5px;
+    font-size: 13px;
+    color: #b5bac1;
+}
+
+#memberList {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    overflow-y: auto;
+    flex: 1;
+}
+
+#memberList li {
+    padding: 6px;
+    border-radius: 5px;
+    color: #dcddde;
+}
+
+#memberList li:hover {
+    background-color: #3a3c43;
+}
+
 /* 
 prompt:
 

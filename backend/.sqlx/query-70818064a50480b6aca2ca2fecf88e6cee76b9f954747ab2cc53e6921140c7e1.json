@@ -1,0 +1,28 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                                SELECT u.username, sm.joined_at\n                                FROM server_members sm\n                                JOIN users u ON sm.user_mem = u.user_id\n                                WHERE sm.server_mem = $1\n                                ORDER BY sm.joined_at ASC\n                                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "username",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 1,
+        "name": "joined_at",
+        "type_info": "Timestamp"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      true
+    ]
+  },
+  "hash": "70818064a50480b6aca2ca2fecf88e6cee76b9f954747ab2cc53e6921140c7e1"
+}

@@ -52,6 +52,7 @@ enum ClientMessage {
     JoinServer(String),
     GetServers,
     SwitchServer(i32),
+    GetMembers,
     // authentication
     Login { username: String, password: String },
     Signup { username: String, email: String, password: String },
@@ -65,6 +66,7 @@ enum ClientMessage {
 enum ServerMessage {
     RoomList(Vec<String>),
     ServerList(Vec<(i32, String, String)>),
+    MemberList(Vec<(String, String)>), 
 
     // auth
     AuthSuccess { token: String, username: String },
@@ -591,6 +593,65 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             }
                         }
                     });
+                }
+
+
+                //* server members logic *
+                ClientMessage::GetMembers => {
+                    if let Some(user) = &auth_user {
+
+                        let server_id = {
+                            let state_lock = state.inner.lock().await;
+                            match state_lock.clients.get(&client_id) {
+                                Some(c) => c.server_id,
+                                None => return,
+                            }
+                        };
+
+                        let db = state.db.clone();
+
+                        let sender = {
+                            let state_lock = state.inner.lock().await;
+                            if let Some(client) = state_lock.clients.get(&client_id) {
+                                client.sender.clone()
+                            } else {
+                                return;
+                            }
+                        };
+
+                        tokio::spawn(async move {
+                            let members = sqlx::query!(
+                                r#"
+                                SELECT u.username, sm.joined_at
+                                FROM server_members sm
+                                JOIN users u ON sm.user_mem = u.user_id
+                                WHERE sm.server_mem = $1
+                                ORDER BY sm.joined_at ASC
+                                "#,
+                                server_id
+                            )
+                            .fetch_all(&db)
+                            .await;
+
+                            if let Ok(rows) = members {
+                                let member_list: Vec<(String, String)> = rows
+                                    .into_iter()
+                                    .map(|r| (
+                                        r.username,
+                                        r.joined_at
+                                        .map(|t| t.to_string())
+                                        .unwrap_or_else(|| "".to_string())
+                                    ))
+                                    .collect();
+
+                                let msg = serde_json::to_string(
+                                    &ServerMessage::MemberList(member_list)
+                                ).unwrap();
+
+                                let _ = sender.send(msg);
+                            }
+                        });
+                    }
                 }
 
 
