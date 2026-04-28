@@ -55,9 +55,16 @@ socket.onmessage = (event) => {
             isAuthenticated = true;
 
             localStorage.setItem("token", data.data.token);
+            localStorage.setItem("username", data.data.username);
 
             document.getElementById("authSection").style.display = "none";
             document.getElementById("chatSection").style.display = "flex";
+
+            document.getElementById("currentUser").textContent =
+            localStorage.getItem("username");
+
+            document.getElementById("serverSidebar").style.display = "flex";
+            document.getElementById("sidebar").style.display = "flex";
 
             socket.send(JSON.stringify({ type: "GetServers" }));
             socket.send(JSON.stringify({ type: "GetRooms" }));
@@ -159,11 +166,15 @@ function logout() {
     document.getElementById("messages").innerHTML = "";
     document.getElementById("roomList").innerHTML = "";
     document.getElementById("serverList").innerHTML = "";
+    document.getElementById("serverSidebar").style.display = "none";
+    document.getElementById("sidebar").style.display = "none";
 
     // reset current labels
     document.getElementById("currentRoom").textContent = "";
     document.getElementById("currentServer").textContent = "";
     document.getElementById("currentServerCode").textContent = "";
+    localStorage.removeItem("username");
+    document.getElementById("currentUser").textContent = "";
 
     // clear input fields
     document.getElementById("loginUsername").value = "";

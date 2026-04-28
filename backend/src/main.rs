@@ -67,7 +67,7 @@ enum ServerMessage {
     ServerList(Vec<(i32, String, String)>),
 
     // auth
-    AuthSuccess { token: String },
+    AuthSuccess { token: String, username: String },
     AuthError(String),
 }
 
@@ -1042,7 +1042,10 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                                 // send auth success
                                 let msg = serde_json::to_string(
-                                    &ServerMessage::AuthSuccess { token: token.clone() }
+                                    &ServerMessage::AuthSuccess { 
+                                        token: token.clone(),
+                                        username: user.username.clone(),
+                                    }
                                 ).unwrap();
                                 let _ = sender.send(msg);
 
@@ -1227,7 +1230,10 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                             // send auth success
                             let msg = serde_json::to_string(
-                                &ServerMessage::AuthSuccess { token: token.clone() }
+                                &ServerMessage::AuthSuccess { 
+                                    token: token.clone(),
+                                    username: new_username.clone(),
+                                }
                             ).unwrap();
                             let _ = sender.send(msg);
 
@@ -1334,7 +1340,10 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         state_lock.clients.insert(client_id, client);
 
                         let msg = serde_json::to_string(
-                            &ServerMessage::AuthSuccess { token: new_token.clone() }
+                            &ServerMessage::AuthSuccess { 
+                                token: new_token.clone(),
+                                username: user.username.clone(),
+                            }
                         ).unwrap();
 
                         let _ = tx.send(msg);

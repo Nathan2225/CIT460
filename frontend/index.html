@@ -12,7 +12,7 @@
 
     <!-- side bar -->
     <!-- Server Sidebar -->
-    <div id="serverSidebar">
+    <div id="serverSidebar" style="display:none;">
         <ul id="serverList"></ul>
 
         <div id="serverControls">
@@ -25,7 +25,7 @@
     </div>
 
     <!-- Channel Sidebar -->
-    <div id="sidebar">
+    <div id="sidebar" style="display:none;">
        <h3>Channels</h3>
     <ul id="roomList"></ul>
 
@@ -46,12 +46,14 @@
                     <span id="currentServerCode"> </span>
                 </div>
             </div>
-
+            <div id="currentUser"></div>
             <button id="logoutBtn" onclick="logout()">Logout</button>
         </header>
 
         <!-- username -->
         <div id="authSection">
+
+            <h1>Welcome to Thiscord Chat!</h1>
 
             <h2>Login</h2>
             <input id="loginUsername" placeholder="Username">
