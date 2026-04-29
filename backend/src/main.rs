@@ -66,7 +66,7 @@ enum ClientMessage {
 enum ServerMessage {
     RoomList(Vec<String>),
     ServerList(Vec<(i32, String, String, i32)>), //server_id, name, server code, owner_id
-    MemberList(Vec<(String, String)>), 
+    MemberList(Vec<(String, String)>),  // username, joined_at
 
     // auth
     AuthSuccess { token: String, username: String, user_id: i32 },

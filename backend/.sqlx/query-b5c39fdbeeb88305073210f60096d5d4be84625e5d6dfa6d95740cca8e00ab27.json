@@ -1,0 +1,40 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n                                SELECT s.server_id, s.name_server, s.server_code, s.owner_id\n                                FROM servers s\n                                JOIN server_members sm ON s.server_id = sm.server_mem\n                                WHERE sm.user_mem = $1\n                                ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "server_id",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 1,
+        "name": "name_server",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 2,
+        "name": "server_code",
+        "type_info": "Varchar"
+      },
+      {
+        "ordinal": 3,
+        "name": "owner_id",
+        "type_info": "Int4"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int4"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false
+    ]
+  },
+  "hash": "b5c39fdbeeb88305073210f60096d5d4be84625e5d6dfa6d95740cca8e00ab27"
+}
