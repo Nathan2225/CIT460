@@ -19,6 +19,7 @@ use std::{
     sync::Arc,
 };
 
+//https://argon2-cffi.readthedocs.io/en/stable/argon2.html
 use argon2::{
     password_hash::{rand_core::OsRng, PasswordHash, PasswordHasher, PasswordVerifier, SaltString},
     Argon2,
@@ -63,7 +64,7 @@ enum ClientMessage {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "type", content = "data")]
 enum ServerMessage {
-    RoomList(Vec<String>),
+    RoomList(Vec<String>), // channel names
     ServerList(Vec<(i32, String, String, i32)>), //server_id, name, server code, owner_id
     MemberList(Vec<(String, String)>),  // username, joined_at
 
@@ -300,7 +301,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         };
 
                         let db_clone = state.db.clone();
-                        let user_id = user_id; // already available above
+                        let user_id = user_id; 
 
                         tokio::spawn(async move {
                             let servers = sqlx::query!(
@@ -343,7 +344,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     if let Some(user) = &auth_user {
                         let user_id = user.user_id;
                         let db = state.db.clone();
-                        //let username_clone = username.clone();
                         let code_clone = server_code_input.clone();
 
                         let result = tokio::spawn(async move {
@@ -356,7 +356,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             .await
                             .ok()?;
 
-                            // insert into server_members avoid duplicates later
+                            // insert into server_members avoid duplicates
                             let _ = sqlx::query!(
                                 r#"
                                 INSERT INTO server_members (user_mem, server_mem)
@@ -373,8 +373,11 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         })
                         .await;
 
+                        let mut joined_server_id: Option<i32> = None;
+
                         // update in-memory state
                         if let Ok(Some(server_id)) = result {
+                            joined_server_id = Some(server_id);
                             let mut state = state.inner.lock().await;
 
                             // remove from old channel
@@ -407,6 +410,45 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                                 .insert(client_id);
                         }
 
+                        // broadcast updated member list to all clients in server
+                        if let Some(server_id) = joined_server_id {
+                            let db_clone_members = state.db.clone();
+                            let state_clone = state.inner.clone();
+
+                            tokio::spawn(async move {
+                                let members = sqlx::query!(
+                                    r#"
+                                    SELECT u.username, sm.joined_at::text
+                                    FROM server_members sm
+                                    JOIN users u ON u.user_id = sm.user_mem
+                                    WHERE sm.server_mem = $1
+                                    ORDER BY sm.joined_at ASC
+                                    "#,
+                                    server_id
+                                )
+                                .fetch_all(&db_clone_members)
+                                .await
+                                .unwrap_or_default();
+
+                                let member_list: Vec<(String, String)> = members
+                                    .into_iter()
+                                    .map(|m| (m.username, m.joined_at.unwrap_or_default()))
+                                    .collect();
+
+                                let msg = serde_json::to_string(
+                                    &ServerMessage::MemberList(member_list)
+                                ).unwrap();
+
+                                let state_lock = state_clone.lock().await;
+
+                                for client in state_lock.clients.values() {
+                                    if client.server_id == server_id {
+                                        let _ = client.sender.send(msg.clone());
+                                    }
+                                }
+                            });
+                        }
+
                         // send updated server list
                         let sender = {
                             let state_lock = state.inner.lock().await;
@@ -418,7 +460,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         };
 
                         let db_clone = state.db.clone();
-                        let user_id = user_id; // already available above
+                        let user_id = user_id; 
 
                         tokio::spawn(async move {
                             let servers = sqlx::query!(
@@ -451,8 +493,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                                 let _ = sender.send(msg);
                             }
                         });
-
-
                     }
                 }
 
@@ -520,7 +560,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         .or_insert_with(HashSet::new)
                         .insert(client_id);
 
-                    // broadcast leave + join
+                    // broadcast leave & join
                     broadcast_to_channel(
                         &state,
                         &old_server_key,
@@ -574,7 +614,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
 
                     // *load message history for general channel*
-                    //let sender_clone = sender.clone();
                     let sender_clone2 = sender.clone();
                     tokio::spawn(async move {
                         let messages = sqlx::query!(
@@ -691,7 +730,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         };
 
                         // lock is dropped here automatically
-
                         let allowed = sqlx::query!(
                             "SELECT 1 as exists FROM server_members WHERE user_mem = $1 AND server_mem = $2",
                             user.user_id,
@@ -715,7 +753,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                         //save message to DB
                         let db = state.db.clone();
                         let message_clone = message.clone();
-                        //let username_clone = name.clone();
                         let user_id_clone = user.user_id;
                         let channel_clone = channel.clone();
                         let server_id_clone = server_id;
@@ -791,6 +828,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     }
 
                     let db = state.db.clone();
+                    let state_clone = state.inner.clone();
                     let mut state = state.inner.lock().await;
 
                     let (server_name, old_channel, username) =
@@ -810,7 +848,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             channel.remove(&client_id);
                         }
                     }
-
 
                     //insert channel into DB if not exists
                     let db_clone = db.clone();
@@ -834,7 +871,6 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     });
 
 
-
                     // add to new channel
                     if let Some(server) = state.servers.get_mut(&server_name) {
                         server
@@ -848,6 +884,55 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     if let Some(client) = state.clients.get_mut(&client_id) {
                         client.channel = new_channel.clone();
                     }
+
+                    // insert + broadcast
+                    let db_clone_rooms = db.clone();
+                    let server_id_for_rooms = server_name.parse::<i32>().unwrap();
+                    let channel_name_clone = new_channel.clone();
+
+                    tokio::spawn(async move {
+                        // insert new channel if not exists
+                        let _ = sqlx::query!(
+                            r#"
+                            INSERT INTO channels (server_channel, channel_name)
+                            VALUES ($1, $2)
+                            ON CONFLICT (server_channel, channel_name) DO NOTHING
+                            "#,
+                            server_id_for_rooms,
+                            channel_name_clone
+                        )
+                        .execute(&db_clone_rooms)
+                        .await;
+
+                        // fetch updated channel list
+                        let channels = sqlx::query!(
+                            r#"
+                            SELECT channel_name
+                            FROM channels
+                            WHERE server_channel = $1
+                            "#,
+                            server_id_for_rooms
+                        )
+                        .fetch_all(&db_clone_rooms)
+                        .await
+                        .unwrap_or_default();
+
+                        let channel_list: Vec<String> =
+                            channels.into_iter().map(|c| c.channel_name).collect();
+
+                        let msg = serde_json::to_string(
+                            &ServerMessage::RoomList(channel_list)
+                        ).unwrap();
+
+                        // broadcast to all clients server-level
+                        let state_lock = state_clone.lock().await;
+
+                        for client in state_lock.clients.values() {
+                            if client.server_id == server_id_for_rooms {
+                                let _ = client.sender.send(msg.clone());
+                            }
+                        }
+                    });
 
                     // broadcast
                     broadcast_to_channel(
@@ -865,8 +950,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                     );
 
 
-                    //Load previous messages from DB
-                    
+                    //Load previous messages from DB for this channel
                     let channel_name = new_channel.clone();
                     let server_name_clone = server_name.clone();
                     let sender = {
@@ -879,6 +963,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                     let server_id = server_name.parse::<i32>().unwrap();
 
+                    // get messages for this channel and server, ordered by created_at
                     tokio::spawn(async move {
                         let messages = sqlx::query!(
                             r#"
@@ -906,6 +991,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
                             }
                         }
                     });
+                    
                 }
 
 
@@ -1461,6 +1547,7 @@ async fn handle_socket(stream: WebSocket, state: AppState) {
 
                 ClientMessage::Logout => {
                     if let Some(user) = &auth_user {
+                        // clear session token in DB
                         let _ = sqlx::query!(
                             "UPDATE users SET session_token = NULL, session_expires = NULL WHERE user_id = $1",
                             user.user_id
@@ -1545,6 +1632,7 @@ fn broadcast_room_list(state: &ServerState) {
         let _ = client.sender.send(msg.clone());
     }
 }
+
 
 
 // main async tokio
